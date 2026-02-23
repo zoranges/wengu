@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>温谷 · 智能数学解析</title>
+
+<!-- KaTeX -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+<!-- Markdown -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+:root{
+    --bg:#f8fafc;
+    --card:#ffffff;
+    --primary:#4361ee;
+    --accent:#4cc9f0;
+    --text:#1e293b;
+    --muted:#64748b;
+}
+
+body{
+    margin:0;
+    background: radial-gradient(circle at top right, #eef2ff, transparent), var(--bg);
+    font-family:'Segoe UI','Noto Serif SC',serif;
+    color:var(--text);
+}
+
+.container{
+    max-width:850px;
+    margin:40px auto;
+    padding:0 20px;
+}
+
+/* 上传 */
+.upload{
+    background:rgba(255,255,255,.85);
+    backdrop-filter:blur(10px);
+    border-radius:24px;
+    padding:40px;
+    text-align:center;
+    border:2px dashed #cbd5e1;
+    cursor:pointer;
+}
+.upload:hover{border-color:var(--primary);background:#f0f3ff}
+
+/* 按钮 */
+.btn-group{text-align:center;margin:20px 0}
+.primary-btn{
+    padding:10px 28px;
+    border-radius:999px;
+    background:var(--primary);
+    color:white;
+    border:none;
+    cursor:pointer;
+}
+
+/* 主卡片 */
+.current-card{
+    margin-top:30px;
+    background:var(--card);
+    border-radius:24px;
+    padding:35px;
+    box-shadow:0 10px 25px rgba(0,0,0,.05);
+}
+
+.section-title{
+    font-size:.85rem;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:1px;
+    margin-bottom:10px;
+    display:flex;
+}
+.section-title::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:#e2e8f0;
+    margin-left:15px;
+}
+
+.question-text{
+    font-size:1.25rem;
+    margin-bottom:20px;
+}
+
+.analysis-box{
+    background:#f8fafc;
+    border-radius:12px;
+    padding:20px;
+    border-left:4px solid var(--accent);
+    line-height:1.8;
+}
+
+/* =======================
+   历史弹窗（重点修改）
+   ======================= */
+#historyPanel{
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,.6);
+    backdrop-filter:blur(4px);
+    display:none;
+    z-index:100;
+}
+
+.history-box{
+    background:white;
+    max-width:1100px;     /* ⬅ 更宽 */
+    height:90vh;          /* ⬅ 更高 */
+    margin:30px auto;
+    border-radius:22px;
+    padding:35px 40px;
+    overflow:auto;
+}
+
+.history-item{
+    margin-bottom:40px;
+    padding-bottom:30px;
+    border-bottom:1px solid #f1f5f9;
+}
+
+.history-time{
+    font-size:.8rem;
+    color:var(--muted);
+    margin-bottom:10px;
+}
+
+/* 历史题目专用样式（更易阅读） */
+.history-question{
+    font-size:1.35rem;    /* ⬅ 字号增大 */
+    line-height:1.9;      /* ⬅ 行距增大 */
+    margin-top:10px;
+    white-space:normal;   /* ⬅ 强制完整换行 */
+    word-break:break-word;
+}
+
+.loading{
+    display:none;
+    text-align:center;
+    color:var(--primary);
+    font-weight:bold;
+    margin:15px 0;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+    <div id="upload" class="upload">
+        <div style="font-size:2rem">📄</div>
+        <p>将题目图片拖拽至此，或点击上传</p>
+        <input type="file" id="fileInput" hidden accept="image/*">
+    </div>
+
+    <div id="loading" class="loading">AI 正在解析中…</div>
+
+    <div class="btn-group">
+        <button class="primary-btn" onclick="openHistory()">📚 查看历史记录</button>
+    </div>
+
+    <div id="currentView"></div>
+</div>
+
+<div id="historyPanel" onclick="if(event.target===this)closeHistory()">
+    <div class="history-box">
+        <div style="display:flex;justify-content:space-between;margin-bottom:20px">
+            <h3 style="margin:0">历史记录（仅题目）</h3>
+            <span style="cursor:pointer;color:var(--primary)" onclick="closeHistory()">关闭 ✕</span>
+        </div>
+        <div id="historyList"></div>
+    </div>
+</div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+let historyCache = [];
+
+/* KaTeX */
+function renderMath(el){
+    renderMathInElement(el,{
+        delimiters:[
+            {left:"$$",right:"$$",display:true},
+            {left:"$",right:"$",display:false},
+            {left:"\\(",right:"\\)",display:false},
+            {left:"\\[",right:"\\]",display:true}
+        ],
+        throwOnError:false
+    });
+}
+
+/* 主视图（完整解析） */
+function renderContent(data){
+    const box=document.getElementById("currentView");
+    box.innerHTML=`
+        <div class="current-card">
+            <div class="section-title">题目还原</div>
+            <div class="question-text">${data.formatted_question}</div>
+
+            <div class="section-title">详细解析</div>
+            <div class="analysis-box">
+                ${marked.parse(data.analysis)}
+            </div>
+
+            <div class="section-title">最终答案</div>
+            <div class="analysis-box">${data.answer}</div>
+        </div>
+    `;
+    renderMath(box);
+}
+
+/* 历史弹窗（只显示题目） */
+function openHistory(){
+    const panel=document.getElementById("historyPanel");
+    const list=document.getElementById("historyList");
+
+    list.innerHTML = historyCache.map(h=>`
+        <div class="history-item">
+            <div class="history-time">${h.created_at}</div>
+            <div class="section-title">题目</div>
+            <div class="history-question">${h.formatted_question}</div>
+        </div>
+    `).join("");
+
+    panel.style.display="block";
+    renderMath(panel);
+}
+
+function closeHistory(){
+    document.getElementById("historyPanel").style.display="none";
+}
+
+/* 上传 */
+const upload=document.getElementById("upload");
+const fileInput=document.getElementById("fileInput");
+const loading=document.getElementById("loading");
+
+upload.onclick=()=>fileInput.click();
+fileInput.onchange=e=>handleUpload(e.target.files[0]);
+
+async function handleUpload(file){
+    if(!file)return;
+    loading.style.display="block";
+    const fd=new FormData();
+    fd.append("file",file);
+    try{
+        const res=await fetch(API+"/upload",{method:"POST",body:fd});
+        const json=await res.json();
+        if(json.ai_analysis){
+            renderContent(json.ai_analysis);
+            loadHistory();
+        }
+    }catch{
+        alert("服务器连接失败");
+    }
+    loading.style.display="none";
+}
+
+async function loadHistory(){
+    const res=await fetch(API+"/history");
+    historyCache=await res.json();
+}
+
+loadHistory();
+</script>
+</body>
+</html>

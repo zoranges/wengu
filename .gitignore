@@ -1,0 +1,28 @@
+# Python 编译/依赖文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+requirements.txt.bak
+
+# 数据库文件（不上传本地数据库）
+*.db
+*.sqlite3
+data/
+
+# 日志文件
+*.log
+logs/
+
+# Docker 相关（无需上传）
+.dockerignore
+*.tar
+
+# 系统/编辑器缓存
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
